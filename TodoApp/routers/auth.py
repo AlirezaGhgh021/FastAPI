@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from ..database import SessionLocal, get_db
+from ..database import get_db
 from ..models import Users
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
@@ -20,7 +20,7 @@ SECRET_KEY = '16d2f165d8d36cf388f7f481dbc7103ccfbb7f148048e0384d90f4a5cc24b89c'
 ALGORITHM = 'HS256'
 
 bcrypt_context = CryptContext(schemes=['bcrypt'], deprecated='auto')
-oauth2_bearer = OAuth2PasswordBearer(tokenUrl= 'auth/token')
+oauth2_bearer = OAuth2PasswordBearer(tokenUrl= '/auth/token')
 
 
 class CreateUserRequest(BaseModel):
@@ -37,14 +37,11 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
-
-
-# def get_db():
-#     db = SessionLocal()
-#     try:
-#         yield db
-#     finally:
-#         db.close()
+class UpdateUserRequest(BaseModel):
+    email: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    phone_number: str | None = None
 
 
 db_dependency = Annotated[Session, Depends(get_db)]
@@ -103,10 +100,21 @@ def require_user(user = Depends(get_current_user)):
 
 
 
-@router.post('/', status_code=status.HTTP_201_CREATED)
-async def create_user(db: db_dependency,
-                      create_user_request: CreateUserRequest):
-    create_user_model = Users(
+@router.post('/auth/register', status_code=status.HTTP_201_CREATED)
+async def create_user(create_user_request: CreateUserRequest, db: db_dependency):
+
+    existing_user = db.query(Users).filter(
+        (Users.username == create_user_request.username) |
+        (Users.email == create_user_request.email)
+    ).first()
+
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username or Email already exists."
+        )
+
+    new_user = Users(
         email=create_user_request.email,
         username=create_user_request.username,
         first_name=create_user_request.first_name,
@@ -117,11 +125,11 @@ async def create_user(db: db_dependency,
         is_active=True
     )
 
-
-    db.add(create_user_model)
+    db.add(new_user)
     db.commit()
+    db.refresh(new_user)
 
-
+    return {"message": "User created successfully"}
 
 
 @router.post('/token', response_model=Token)
@@ -135,35 +143,25 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
 
     return {'access_token': token, 'token_type': 'bearer'}
 
-@router.put('user/{user_id}', status_code=status.HTTP_204_NO_CONTENT)
+@router.put('/user/{user_id}', status_code=status.HTTP_204_NO_CONTENT)
 async def update_user(
-        user_id: int,
-        updated_data: CreateUserRequest,
-        db: db_dependency,
-        current_user: dict = Depends(get_current_user)
+    user_id: int,
+    updated_data: UpdateUserRequest,
+    db: db_dependency,
+    current_user: dict = Depends(get_current_user)
 ):
-    if current_user.get('id') != user_id and current_user.get('role') != 'admin':
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Not authorized to update this user')
+    if current_user['id'] != user_id and current_user['user_role'] != 'admin':
+        raise HTTPException(status_code=401, detail="Not authorized")
 
     user_model = db.query(Users).filter(Users.id == user_id).first()
-    if user_model is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='User not found')
 
-    user_model.email = updated_data.email
-    user_model.first_name = updated_data.first_name
-    user_model.last_name = updated_data.last_name
-    user_model.role = updated_data.role
-    user_model.hashed_password = bcrypt_context.hash(updated_data.password)
+    if not user_model:
+        raise HTTPException(status_code=404, detail="User not found")
 
-    db.add(user_model)
+    # update only provided fields
+    update_fields = updated_data.dict(exclude_unset=True)
+    for key, value in update_fields.items():
+        setattr(user_model, key, value)
+
     db.commit()
-
-
-@router.put('/reset-password')
-def reset_password(username: str, new_password: str, db: Session = Depends(get_db)):
-    user = db.query(Users).filter(Users.username == username).first()
-    if not user:
-        raise HTTPException(status_code=404, detail='user not found')
-    user.hashed_password = bcrypt_context.hash(new_password)
-    db.commit()
-    return {"message": f"Password reset successfully for user '{username}'"}
+    return {"message": "User updated"}
