@@ -1,10 +1,8 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from starlette.responses import RedirectResponse
-
+from fastapi.responses import RedirectResponse
 from .core.config import settings
 from .routers import auth, users, todos, admin
-
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent
