@@ -1,43 +1,7 @@
-# this is the initial file I created
-
-# from fastapi import FastAPI, Request, status
-# from fastapi.staticfiles import StaticFiles
-#
-# from .models import Base
-# from .database import engine
-# from .routers import auth, todos, admin, users
-# from fastapi.responses import RedirectResponse
-#
-#
-# app = FastAPI()
-#
-# Base.metadata.create_all(bind=engine)
-#
-#
-#
-# app.mount('/static', StaticFiles(directory='TodoApp/static'), name='static')
-#
-# @app.get('/')
-# def test(request: Request):
-#     return RedirectResponse(url='/todos/todo-page', status_code=status.HTTP_302_FOUND)
-#
-#
-#
-#
-# @app.get('/healthy')
-# def health_check():
-#     return {'status': 'Healthy'}
-#
-#
-# app.include_router(auth.router)
-# app.include_router(todos.router)
-# app.include_router(admin.router)
-# app.include_router(users.router)
-
-# ----------------------------------
-
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import RedirectResponse
+
 from .core.config import settings
 from .routers import auth, users, todos, admin
 
@@ -61,6 +25,11 @@ def create_application() -> FastAPI:
     app.include_router(users.router, prefix="/users", tags=["Users"])
     app.include_router(todos.router, prefix="/todos", tags=["Todos"])
     app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+
+    @app.get("/")
+    def root():
+        return RedirectResponse(url="/auth/login-page")
+
 
     @app.get("/healthy")
     def health_check():
